@@ -4,31 +4,31 @@ library(tidyr)
 
 
 df <- read.csv("v50_PM10_1970_2015 (1)(TOTALS BY COUNTRY).csv") %>%
-  # Remove all auto-generated empty columns
+  # Remove all auto-generated empty columns(weird problem)
   select(-matches("^X(\\.?\\d+)?$")) %>%
   # Convert and pivot
   mutate(across(starts_with("Y_"), as.numeric)) %>%
+  #reshaping the data into a new,long format for easier future processing
   pivot_longer(
-    cols = starts_with("Y_"),
-    names_to = "year",
-    values_to = "pm25",
-    values_drop_na = TRUE
+    cols = starts_with("Y_"), # Columns convert to pivots
+    names_to = "year", # Create a new column containing the years
+    values_to = "pm25", # Create a new column containing the pm2.5 values
+    values_drop_na = TRUE # Remove NA pm2.5 rows
   )
+# Convert "Y_1990" → 1990
+mutate(year = as.numeric(gsub("Y_", "", year)))
 
 stan_data <- list(
-  N = nrow(df),
-  n_years = length(grep("^Y_", names(df))),
-  pm25 = as.matrix(select(df, starts_with("Y_"))),
-  annex = ifelse(df$IPCC.Annex == "Annex_I", 1, 0),
-  country_id = as.numeric(factor(df$ISO_A3)),
-  region_id = as.numeric(factor(df$World.Region)),
-  J = length(unique(df$ISO_A3)),
-  K = length(unique(df$World.Region))
+  N = nrow(df), # Total observations
+  year = df$year - min(df$year), # Centered year (1970-2015 becomes 0-45)
+  pm25 = df$pm25, # pm2.5 measurements
+  annex = ifelse(df$IPCC.Annex == "Annex_I", 1, 0), # Binary annex status
+  country_id = as.numeric(factor(df$ISO_A3)), # Unique country IDs
+  region_id = as.numeric(factor(df$World.Region)), # Unique region IDs
+  J = length(unique(df$ISO_A3)), # Number of countries
+  K = length(unique(df$World.Region)) # Number of regions
 )
 
-# Center years (1970-2015 becomes 0-45)
-years <- as.numeric(gsub("Y_", "", grep("^Y_", names(df), value = TRUE)))
-stan_data$year_c <- years - min(years)
 
 spatial_model <- stan(
   file = "spatial_model_rao.stan",
