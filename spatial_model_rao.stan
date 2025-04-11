@@ -1,22 +1,22 @@
 data {
-  int<lower=0> N; # Number of countries
-  int<lower=0> n_years; # Number of years
-  matrix[N, n_years] y; # PM2.5 matrix
-  int annex[N]; # Annex status
-  int<lower=0> J; # Number of countries
-  int<lower=1, upper=J> country_id[N]; # Maps countries to unique IDs (1 to J)
+  int<lower=0> N; # Total observations
+  vector[N] pm25; # pm2.5 measurements
+  vector[N] year; # Centered years (year - 1970)
+  int annex[N]; # Annex status (1 = Annex, 0 = Non-Annex)
+  int<lower=0> J; # Number of unique countries
+  int<lower=1, upper=J> country_id[N]; # Country IDs (1..J)
   int<lower=0> K; # Number of regions
-  int<lower=1, upper=K> region_id[N]; # Maps countries to region IDs (1 to K)
-  vector[n_years] year_c; # Centered years
+  int<lower=1, upper=K> region_id[N]; # Region IDs (1..K)
 }
 
 parameters {
+  # Fixed effect
   real alpha; # Intercept (baseline pm2.5)
   real beta_year; # Effect of time (year)
   real beta_annex; # Effect of Annex I status
   real beta_interaction; # Interaction: Year × Annex I
   
-  // Random effects
+  # Random effects
   vector[J] z_country; # Standardized country random effects
   vector[K] z_region; # Standardized region random effects
   real<lower=0> sigma_country; # SD of country effects
@@ -25,22 +25,20 @@ parameters {
   real<lower=0> sigma; # Residual error SD
 }
 
-# Rao-blackwellization
 transformed parameters {
-  vector[J] country_effect = z_country * sigma_country; # Scaled country effects
-  vector[K] region_effect = z_region * sigma_region; # Scaled region effects
-  matrix[N, n_years] mu; # Linear predictor
+  # Non-centered parameterization
+  vector[J] country_effect = z_country * sigma_country;
+  vector[K] region_effect = z_region * sigma_region;
   
-  # Calculate expected pm2.5 for each country/year
-  for (i in 1:N) {
-    for (t in 1:n_years) {
-      mu[i,t] = alpha + 
-                beta_year * year_c[t] + 
-                beta_annex * annex[i] + 
-                beta_interaction * year_c[t] * annex[i] + 
-                country_effect[country_id[i]] + 
-                region_effect[region_id[i]];
-    }
+  # Linear predictor
+  vector[N] mu;
+  for (n in 1:N) {
+    mu[n] = alpha + 
+            beta_year * year[n] + 
+            beta_annex * annex[n] + 
+            beta_interaction * year[n] * annex[n] + 
+            country_effect[country_id[n]] + 
+            region_effect[region_id[n]];
   }
 }
 
@@ -59,16 +57,13 @@ model {
   sigma_region ~ exponential(1);
   
   # Likelihood
-  for (i in 1:N) {
-    y[i,] ~ normal(mu[i,], sigma);
-  }
+  pm25 ~ normal(mu, sigma);
 }
 
 generated quantities {
-  matrix[N, n_years] y_rep; # Replicated data for posterior checks
-  for (i in 1:N) {
-    for (t in 1:n_years) {
-      y_rep[i,t] = normal_rng(mu[i,t], sigma); # Simulate new pm2.5 values
-    }
+  # Posterior predictive checks
+  vector[N] y_rep;
+  for (n in 1:N) {
+    y_rep[n] = normal_rng(mu[n], sigma);
   }
 }
